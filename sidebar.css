@@ -1,0 +1,103 @@
+/* Sidebar container */
+#chatgpt-prompt-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 320px;
+    height: 100vh;
+    background-color: #0D0D0D;
+    border-left: 1px solid #2a2a2a;
+    z-index: 9998;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(0);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: -4px 0 15px rgba(0, 0, 0, 0.2);
+}
+
+/* Sidebar Title */
+#chatgpt-sidebar-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #ececec;
+    padding: 16px 20px;
+    margin: 0;
+    border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
+}
+
+/* List of prompts */
+#chatgpt-prompt-list {
+    list-style: none;
+    padding: 8px;
+    margin: 0;
+    overflow-y: auto;
+    flex-grow: 1;
+    color: #a0a0a0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+}
+
+/* List Item Styling */
+#chatgpt-prompt-list li {
+    padding: 12px 15px;
+    border-radius: 8px;
+    cursor: pointer;
+    line-height: 1.4;
+    white-space: normal;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+#chatgpt-prompt-list li:hover {
+    background-color: #252525;
+    color: #ffffff;
+}
+
+/* --- UPDATED: Toggle button styling and position --- */
+#chatgpt-sidebar-toggle {
+    position: fixed;
+    top: 50%;
+    /* This positions the button right against the sidebar's outer edge */
+    right: 320px; 
+    transform: translateY(-50%);
+    width: 24px;
+    height: 48px;
+    background-color: #171717;
+    border: 1px solid #2a2a2a;
+    /* Removed right border to blend with sidebar */
+    border-right: none; 
+    color: #d1d5db;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 46px;
+    text-align: center;
+    padding: 0;
+    /* Rounded corners on the left side only */
+    border-radius: 8px 0 0 8px; 
+    z-index: 9999;
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+}
+
+/* Collapsed state */
+body.sidebar-collapsed #chatgpt-prompt-sidebar {
+    transform: translateX(100%);
+}
+
+body.sidebar-collapsed #chatgpt-sidebar-toggle {
+    right: -1px;
+}
+
+/* Highlight effect */
+.prompt-highlight {
+    background-color: rgba(217, 212, 119, 0.2) !important;
+    border-radius: 8px;
+    transition: background-color 0.3s ease-in-out;
+}
+
+/* Responsive: Hide on small screens */
+@media (max-width: 1024px) {
+    #chatgpt-prompt-sidebar, #chatgpt-sidebar-toggle {
+        display: none;
+    }
+}

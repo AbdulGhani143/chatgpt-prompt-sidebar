@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT Prompt Sidebar",
+  "version": "1.3",
+  "description": "Adds a collapsible sidebar to ChatGPT to quickly navigate your conversation prompts.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chat.openai.com/*",
+    "https://chatgpt.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*"
+      ],
+      "css": [
+        "sidebar.css"
+      ],
+      "js": [
+        "content_script.js"
+      ]
+    }
+  ]
+}
