@@ -1,103 +1,206 @@
-/* Sidebar container */
-#chatgpt-prompt-sidebar {
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 320px;
-    height: 100vh;
-    background-color: #0D0D0D;
-    border-left: 1px solid #2a2a2a;
-    z-index: 9998;
-    display: flex;
-    flex-direction: column;
-    transform: translateX(0);
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: -4px 0 15px rgba(0, 0, 0, 0.2);
+/* style.css — Styles for the new floating modal prompt history */
+
+/* --- Theme & Layout Variables --- */
+:root {
+    --modal-width: 480px;
+    --modal-max-height: 70vh;
+    --fab-size: 56px;
+    --panel-bg: #1e1e1e;
+    --panel-border: #3a3a3a;
+    --text-primary: #f0f0f0;
+    --text-secondary: #a0a0a0;
+    --accent-color: #4f46e5;
+    --item-hover-bg: #2c2c2c;
+    --panel-radius: 16px;
+    --shadow-color: rgba(0, 0, 0, 0.5);
+    --highlight-bg: rgba(79, 70, 229, 0.15);
+    --z-overlay: 10000;
+    --z-modal: 10001;
+    --z-fab: 9999;
 }
 
-/* Sidebar Title */
-#chatgpt-sidebar-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #ececec;
-    padding: 16px 20px;
-    margin: 0;
-    border-bottom: 1px solid #2a2a2a;
+/* --- Floating Action Button (Toggle) --- */
+#prompt-history-toggle {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    width: var(--fab-size);
+    height: var(--fab-size);
+    background: linear-gradient(45deg, var(--accent-color), #3b82f6);
+    color: white;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    z-index: var(--z-fab);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    box-shadow: 0 8px 20px var(--shadow-color);
+    transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+    will-change: transform;
+    transform: translateZ(0);
+}
+
+#prompt-history-toggle:hover {
+    transform: scale(1.08);
+    box-shadow: 0 12px 25px var(--shadow-color);
+}
+
+/* --- Modal & Overlay --- */
+#prompt-history-overlay,
+#prompt-history-modal {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+#prompt-history-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: var(--z-overlay);
+    will-change: opacity;
+}
+
+#prompt-history-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: var(--modal-width);
+    max-width: 90vw;
+    max-height: var(--modal-max-height);
+    background-color: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--panel-radius);
+    box-shadow: 0 15px 40px var(--shadow-color);
+    z-index: var(--z-modal);
+    display: flex;
+    flex-direction: column;
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    transform: translate(-50%, -50%) scale(0.95);
+    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    will-change: transform, opacity;
+    transform-style: preserve-3d;
+    backface-visibility: hidden;
+}
+
+/* --- Visible State --- */
+body.prompt-modal-visible #prompt-history-overlay,
+body.prompt-modal-visible #prompt-history-modal {
+    opacity: 1;
+    visibility: visible;
+}
+
+body.prompt-modal-visible #prompt-history-modal {
+    transform: translate(-50%, -50%) scale(1);
+}
+
+/* --- Modal Header --- */
+.prompt-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--panel-border);
     flex-shrink: 0;
 }
 
-/* List of prompts */
-#chatgpt-prompt-list {
+.prompt-modal-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+}
+
+#prompt-history-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 28px;
+    font-weight: 300;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    transition: color 0.15s ease, transform 0.15s ease;
+    will-change: transform;
+}
+
+#prompt-history-close-btn:hover {
+    color: var(--text-primary);
+    transform: scale(1.1);
+}
+
+/* --- Prompt List --- */
+#prompt-history-list {
     list-style: none;
-    padding: 8px;
+    padding: 16px;
     margin: 0;
     overflow-y: auto;
     flex-grow: 1;
-    color: #a0a0a0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    font-size: 14px;
 }
 
-/* List Item Styling */
-#chatgpt-prompt-list li {
-    padding: 12px 15px;
-    border-radius: 8px;
+.prompt-item {
+    display: flex;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 10px;
     cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
     line-height: 1.4;
-    white-space: normal;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    will-change: transform, background-color;
+    transform: translateZ(0);
 }
 
-#chatgpt-prompt-list li:hover {
-    background-color: #252525;
-    color: #ffffff;
+.prompt-item:hover {
+    background-color: var(--item-hover-bg);
+    transform: translateY(-1px);
 }
 
-/* --- UPDATED: Toggle button styling and position --- */
-#chatgpt-sidebar-toggle {
-    position: fixed;
-    top: 50%;
-    /* This positions the button right against the sidebar's outer edge */
-    right: 320px; 
-    transform: translateY(-50%);
-    width: 24px;
-    height: 48px;
-    background-color: #171717;
-    border: 1px solid #2a2a2a;
-    /* Removed right border to blend with sidebar */
-    border-right: none; 
-    color: #d1d5db;
-    cursor: pointer;
-    font-size: 20px;
-    line-height: 46px;
+.prompt-item.empty {
+    color: var(--text-secondary);
     text-align: center;
-    padding: 0;
-    /* Rounded corners on the left side only */
-    border-radius: 8px 0 0 8px; 
-    z-index: 9999;
-    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+    display: block;
+    padding: 40px 20px;
+    cursor: default;
 }
 
-/* Collapsed state */
-body.sidebar-collapsed #chatgpt-prompt-sidebar {
-    transform: translateX(100%);
+.prompt-number {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 14px;
+    flex-shrink: 0;
 }
 
-body.sidebar-collapsed #chatgpt-sidebar-toggle {
-    right: -1px;
+.prompt-snippet {
+    font-size: 15px;
+    word-break: break-word;
 }
 
-/* Highlight effect */
+/* --- Page Highlight Effect --- */
 .prompt-highlight {
-    background-color: rgba(217, 212, 119, 0.2) !important;
+    background-color: var(--highlight-bg) !important;
     border-radius: 8px;
     transition: background-color 0.3s ease-in-out;
+    box-shadow: 0 0 0 2px var(--accent-color);
 }
 
-/* Responsive: Hide on small screens */
+/* --- Accessibility & Responsive --- */
 @media (max-width: 1024px) {
-    #chatgpt-prompt-sidebar, #chatgpt-sidebar-toggle {
-        display: none;
+    #prompt-history-toggle,
+    #prompt-history-modal,
+    #prompt-history-overlay {
+        display: none !important;
     }
+}
+
+#prompt-history-toggle:focus-visible,
+#prompt-history-close-btn:focus-visible,
+.prompt-item:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
 }

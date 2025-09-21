@@ -1,118 +1,243 @@
-console.log("✅ ChatGPT Sidebar Extension is starting...");
+// content_script.js — Revamped with a floating modal window
 
-// This wrapper function ensures our code only runs after the page body is ready.
-function runExtension() {
-    // --- Configuration & Selectors ---
-    const SELECTORS = {
-        conversationTurn: 'div[data-testid^="conversation-turn-"]',
-        userMessageContainer: '[data-message-author-role="user"]',
-        userMessageText: 'div[data-message-author-role="user"] .text-token-text-primary',
-        conversationContainer: 'main',
+console.log("✅ Prompt History Extension starting...");
+
+(function () {
+    // --- Site Configuration (Unchanged) ---
+    const siteConfigs = {
+        'chatgpt.com': {
+            userMessageContainer: 'div[data-message-author-role="user"]',
+            userMessageText: 'div.text-base, div[class*="markdown"] p, p',
+            conversationContainer: 'main'
+        },
+        'chat.openai.com': null, // Alias
+        'gemini.google.com': {
+            userMessageContainer: '.user-query',
+            userMessageText: '.query-text, .query-text-line, [class*="query-text"]',
+            conversationContainer: '.conversation-container'
+        }
     };
+
+    siteConfigs['chat.openai.com'] = siteConfigs['chatgpt.com'];
+    const siteKey = Object.keys(siteConfigs).find(k => window.location.hostname.includes(k));
+    const SELECTORS = siteConfigs[siteKey] || siteConfigs['chatgpt.com'];
+
+    // --- New DOM IDs for Modal UI ---
+    const MODAL_ID = 'prompt-history-modal';
+    const TOGGLE_ID = 'prompt-history-toggle';
+    const LIST_ID = 'prompt-history-list';
+    const OVERLAY_ID = 'prompt-history-overlay';
+    const CLOSE_BTN_ID = 'prompt-history-close-btn';
+
+    // --- Constants ---
     const SNIPPET_LENGTH = 160;
-    const HIGHLIGHT_DURATION_MS = 2000;
-
+    const HIGHLIGHT_MS = 2000;
     let promptIdCounter = 0;
+    let debounceTimer = null;
+    let cachedList = null;
+    let lastMessageCount = 0;
 
-    function createSidebar() {
-        // Prevent creating duplicate elements
-        if (document.getElementById('chatgpt-prompt-sidebar')) return;
+    // --- NEW: Create Modal UI ---
+    function createModalUI() {
+        if (document.getElementById(MODAL_ID)) return;
 
-        const sidebar = document.createElement('div');
-        sidebar.id = 'chatgpt-prompt-sidebar';
-        sidebar.className = 'chatgpt-prompt-sidebar';
-        
+        // Modal Overlay (for background dimming)
+        const overlay = document.createElement('div');
+        overlay.id = OVERLAY_ID;
+
+        // Main Modal Container
+        const modal = document.createElement('div');
+        modal.id = MODAL_ID;
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'prompt-modal-header';
+
         const title = document.createElement('h2');
-        title.id = 'chatgpt-sidebar-title';
+        title.className = 'prompt-modal-title';
         title.textContent = 'Prompt History';
 
+        const closeBtn = document.createElement('button');
+        closeBtn.id = CLOSE_BTN_ID;
+        closeBtn.textContent = '×';
+        closeBtn.setAttribute('aria-label', 'Close');
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        // Prompt List
         const list = document.createElement('ul');
-        list.id = 'chatgpt-prompt-list';
-        const toggleButton = document.createElement('button');
-        toggleButton.id = 'chatgpt-sidebar-toggle';
-        toggleButton.textContent = '›';
+        list.id = LIST_ID;
 
-        sidebar.appendChild(title);
-        sidebar.appendChild(list);
-        document.body.appendChild(sidebar);
-        document.body.appendChild(toggleButton);
+        // Floating Action Button (FAB) to open the modal
+        const toggleBtn = document.createElement('button');
+        toggleBtn.id = TOGGLE_ID;
+        toggleBtn.setAttribute('aria-label', 'View Prompt History');
+        // Simple icon for the button
+        toggleBtn.innerHTML = `📜`;
 
-        toggleButton.addEventListener('click', () => {
-            const isCollapsed = document.body.classList.toggle('sidebar-collapsed');
-            toggleButton.textContent = isCollapsed ? '‹' : '›';
-            chrome.storage.local.set({ sidebarIsCollapsed: isCollapsed });
-        });
+        // Append elements to body
+        modal.appendChild(header);
+        modal.appendChild(list);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        document.body.appendChild(toggleBtn);
 
-        chrome.storage.local.get('sidebarIsCollapsed', (data) => {
-            if (data.sidebarIsCollapsed) {
-                document.body.classList.add('sidebar-collapsed');
-                toggleButton.textContent = '‹';
-            }
-        });
+        // Cache the list element
+        cachedList = list;
+
+        // --- NEW: Event Listeners for Modal ---
+        const openModal = () => document.body.classList.add('prompt-modal-visible');
+        const closeModal = () => document.body.classList.remove('prompt-modal-visible');
+
+        toggleBtn.addEventListener('click', openModal);
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', closeModal); // Click outside to close
     }
 
-    function syncSidebar() {
-        const sidebarList = document.getElementById('chatgpt-prompt-list');
-        if (!sidebarList) return;
-        sidebarList.innerHTML = '';
-        const promptElements = document.querySelectorAll(SELECTORS.userMessageContainer);
+    // --- Find User Messages (Optimized) ---
+    function findUserMessages() {
+        if (!SELECTORS || !SELECTORS.userMessageContainer) return [];
 
-        promptElements.forEach((promptEl, index) => {
-            const textElement = promptEl.querySelector('div:last-child > div:first-child');
-            if (!textElement) return;
+        const nodeList = Array.from(document.querySelectorAll(SELECTORS.userMessageContainer));
+        if (!nodeList.length) return [];
 
-            if (!promptEl.dataset.promptId) {
-                promptEl.dataset.promptId = `prompt-sync-${promptIdCounter++}`;
-            }
-            const promptId = promptEl.dataset.promptId;
-            const fullText = textElement.textContent || '';
-            if (fullText.trim() === '') return;
+        const messages = nodeList.map((el, index) => {
+            let textEl = el.querySelector(SELECTORS.userMessageText);
+            const txt = (textEl ? textEl.textContent : el.textContent || '').trim().replace(/\s+/g, ' ');
+            
+            // Use DOM order instead of getBoundingClientRect to avoid layout thrashing
+            return { el, text: txt, index };
+        }).filter(m => m.text && m.text.length);
 
-            const snippet = fullText.length > SNIPPET_LENGTH ?
-                fullText.substring(0, SNIPPET_LENGTH) + '...' :
-                fullText;
+        // Sort by DOM order instead of position
+        messages.sort((a, b) => a.index - b.index);
+        return messages;
+    }
 
-            const listItem = document.createElement('li');
-            listItem.textContent = `${index + 1}. ${snippet}`;
-            listItem.title = fullText;
-            listItem.dataset.targetId = promptId;
+    // --- Sync Prompts to List (Optimized for Performance) ---
+    function syncPrompts() {
+        if (!cachedList) {
+            cachedList = document.getElementById(LIST_ID);
+        }
+        if (!cachedList) return;
 
-            listItem.addEventListener('click', () => {
-                const targetPrompt = document.querySelector(`[data-prompt-id='${promptId}']`);
-                if (targetPrompt) {
-                    targetPrompt.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    targetPrompt.classList.add('prompt-highlight');
-                    setTimeout(() => {
-                        targetPrompt.classList.remove('prompt-highlight');
-                    }, HIGHLIGHT_DURATION_MS);
-                }
+        const messages = findUserMessages();
+        
+        // Only update if the count changed
+        if (messages.length === lastMessageCount && messages.length > 0) {
+            return; // No changes needed
+        }
+        
+        lastMessageCount = messages.length;
+
+        // Use DocumentFragment to reduce reflow
+        const fragment = document.createDocumentFragment();
+
+        if (!messages.length) {
+            cachedList.innerHTML = '';
+            const li = document.createElement('li');
+            li.className = 'prompt-item empty';
+            li.textContent = 'No prompts found in this chat yet.';
+            fragment.appendChild(li);
+        } else {
+            cachedList.innerHTML = '';
+            
+            messages.forEach((m, idx) => {
+                if (!m.el.dataset.promptId) m.el.dataset.promptId = `prompt-sync-${++promptIdCounter}`;
+                m.id = m.el.dataset.promptId;
+
+                const li = document.createElement('li');
+                li.className = 'prompt-item';
+                li.tabIndex = 0;
+                li.dataset.targetId = m.id;
+                li.title = m.text;
+
+                const num = document.createElement('span');
+                num.className = 'prompt-number';
+                num.textContent = `${idx + 1}.`;
+
+                const snip = document.createElement('span');
+                snip.className = 'prompt-snippet';
+                snip.textContent = m.text.length > SNIPPET_LENGTH ? `${m.text.slice(0, SNIPPET_LENGTH)}…` : m.text;
+
+                li.appendChild(num);
+                li.appendChild(snip);
+
+                const activate = () => {
+                    const target = document.querySelector(`[data-prompt-id='${m.id}']`);
+                    if (!target) return;
+
+                    document.body.classList.remove('prompt-modal-visible');
+                    
+                    // Use requestAnimationFrame for smoother animations
+                    requestAnimationFrame(() => {
+                        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        
+                        // Add delay before highlight to ensure scroll completes
+                        setTimeout(() => {
+                            target.classList.add('prompt-highlight');
+                            setTimeout(() => target.classList.remove('prompt-highlight'), HIGHLIGHT_MS);
+                        }, 300);
+                    });
+                };
+
+                li.addEventListener('click', activate);
+                li.addEventListener('keydown', (ev) => { 
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                        ev.preventDefault();
+                        activate();
+                    }
+                });
+
+                fragment.appendChild(li);
             });
-            sidebarList.appendChild(listItem);
-        });
+        }
+        
+        cachedList.appendChild(fragment);
     }
 
-    function observeConversation() {
-        const conversationEl = document.querySelector(SELECTORS.conversationContainer);
-        if (!conversationEl) {
-            setTimeout(observeConversation, 500);
+    // --- Observe Conversation for Changes ---
+    function startObserver() {
+        const containerSelector = SELECTORS?.conversationContainer || 'main';
+        const container = document.querySelector(containerSelector);
+        if (!container) {
+            setTimeout(startObserver, 500);
             return;
         }
-        syncSidebar();
-        const observer = new MutationObserver(() => {
-            setTimeout(syncSidebar, 500);
+
+        syncPrompts();
+
+        const mo = new MutationObserver(() => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => { 
+                try { 
+                    syncPrompts(); 
+                } catch (e) { 
+                    console.error('Sync failed:', e); 
+                }
+            }, 1000); // Increased debounce time for better performance
         });
-        observer.observe(conversationEl, { childList: true, subtree: true });
+
+        // More specific observer to reduce unnecessary triggers
+        mo.observe(container, { childList: true, subtree: false });
     }
 
-    // --- Start the extension ---
-    createSidebar();
-    observeConversation();
-}
+    // --- Initialization ---
+    function init() {
+        try {
+            createModalUI();
+            startObserver();
+            setInterval(syncPrompts, 4000); // Periodic refresh as a fallback
+            console.log('✅ Prompt History Modal initialized');
+        } catch (e) {
+            console.error('Prompt History Modal init failed', e);
+        }
+    }
 
-// --- NEW: This block ensures the body exists before we run anything ---
-if (document.body) {
-    runExtension();
-} else {
-    // If the script runs before the body is ready, wait for the DOM to load.
-    document.addEventListener('DOMContentLoaded', runExtension);
-}
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setTimeout(init, 150);
+    } else {
+        document.addEventListener('DOMContentLoaded', init);
+    }
+})();
