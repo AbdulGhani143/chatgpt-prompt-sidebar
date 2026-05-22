@@ -1,16 +1,19 @@
-// content_script.js — Revamped with a floating modal window
+// content_script.updated.js — Prompt + Answer paired modal list
+// Based on the original file provided by the user (content_script.js).
+// This version pairs each user prompt with its following assistant answer (if present)
+// and renders the list as: "1. Prompt" followed by "Answer 1".
 
-console.log("✅ Prompt History Extension starting...");
+console.log("✅ Prompt History Extension (paired prompt->answer) starting...");
 
 (function () {
-    // --- Site Configuration (Unchanged) ---
+    // --- Site Configuration (keep same defaults) ---
     const siteConfigs = {
         'chatgpt.com': {
             userMessageContainer: 'div[data-message-author-role="user"]',
             userMessageText: 'div.text-base, div[class*="markdown"] p, p',
             conversationContainer: 'main'
         },
-        'chat.openai.com': null, // Alias
+        'chat.openai.com': null,
         'gemini.google.com': {
             userMessageContainer: '.user-query',
             userMessageText: '.query-text, .query-text-line, [class*="query-text"]',
@@ -22,34 +25,45 @@ console.log("✅ Prompt History Extension starting...");
     const siteKey = Object.keys(siteConfigs).find(k => window.location.hostname.includes(k));
     const SELECTORS = siteConfigs[siteKey] || siteConfigs['chatgpt.com'];
 
-    // --- New DOM IDs for Modal UI ---
+    // --- DOM IDs ---
     const MODAL_ID = 'prompt-history-modal';
     const TOGGLE_ID = 'prompt-history-toggle';
     const LIST_ID = 'prompt-history-list';
     const OVERLAY_ID = 'prompt-history-overlay';
     const CLOSE_BTN_ID = 'prompt-history-close-btn';
 
-    // --- Constants ---
     const SNIPPET_LENGTH = 160;
     const HIGHLIGHT_MS = 2000;
-    let promptIdCounter = 0;
+    let idCounter = 0;
     let debounceTimer = null;
     let cachedList = null;
-    let lastMessageCount = 0;
+    let lastPairCount = 0;
 
-    // --- NEW: Create Modal UI ---
+    // --- Inject small CSS for answer items so we don't require a CSS file change ---
+    function injectInlineStyles() {
+        if (document.getElementById('prompt-history-inline-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'prompt-history-inline-styles';
+        style.textContent = `
+            .answer-item { display: flex; gap: 12px; padding: 8px 20px; border-radius: 8px; cursor: pointer; opacity: 0.95; font-size: 14px; color: var(--text-secondary, #bdbdbd); }
+            .answer-item:hover { background-color: rgba(255,255,255,0.02); transform: translateY(-1px); }
+            .answer-label { font-weight: 600; margin-right: 8px; color: var(--text-secondary, #9aa0a6); }
+            .answer-snippet { word-break: break-word; }
+            .answer-highlight { background-color: rgba(16,185,129,0.08) !important; border-radius: 8px; box-shadow: 0 0 0 2px rgba(16,185,129,0.12); }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // --- Create modal UI ---
     function createModalUI() {
         if (document.getElementById(MODAL_ID)) return;
 
-        // Modal Overlay (for background dimming)
         const overlay = document.createElement('div');
         overlay.id = OVERLAY_ID;
 
-        // Main Modal Container
         const modal = document.createElement('div');
         modal.id = MODAL_ID;
 
-        // Header
         const header = document.createElement('div');
         header.className = 'prompt-modal-header';
 
@@ -65,76 +79,96 @@ console.log("✅ Prompt History Extension starting...");
         header.appendChild(title);
         header.appendChild(closeBtn);
 
-        // Prompt List
         const list = document.createElement('ul');
         list.id = LIST_ID;
 
-        // Floating Action Button (FAB) to open the modal
         const toggleBtn = document.createElement('button');
         toggleBtn.id = TOGGLE_ID;
         toggleBtn.setAttribute('aria-label', 'View Prompt History');
-        // Simple icon for the button
         toggleBtn.innerHTML = `📜`;
 
-        // Append elements to body
         modal.appendChild(header);
         modal.appendChild(list);
         document.body.appendChild(overlay);
         document.body.appendChild(modal);
         document.body.appendChild(toggleBtn);
 
-        // Cache the list element
         cachedList = list;
 
-        // --- NEW: Event Listeners for Modal ---
         const openModal = () => document.body.classList.add('prompt-modal-visible');
         const closeModal = () => document.body.classList.remove('prompt-modal-visible');
 
         toggleBtn.addEventListener('click', openModal);
         closeBtn.addEventListener('click', closeModal);
-        overlay.addEventListener('click', closeModal); // Click outside to close
+        overlay.addEventListener('click', closeModal);
     }
 
-    // --- Find User Messages (Optimized) ---
-    function findUserMessages() {
-        if (!SELECTORS || !SELECTORS.userMessageContainer) return [];
-
-        const nodeList = Array.from(document.querySelectorAll(SELECTORS.userMessageContainer));
+    // --- Read all message nodes with a role attribute and build ordered array ---
+    function readOrderedMessages() {
+        const nodeList = Array.from(document.querySelectorAll('[data-message-author-role]'));
         if (!nodeList.length) return [];
 
-        const messages = nodeList.map((el, index) => {
-            let textEl = el.querySelector(SELECTORS.userMessageText);
-            const txt = (textEl ? textEl.textContent : el.textContent || '').trim().replace(/\s+/g, ' ');
-            
-            // Use DOM order instead of getBoundingClientRect to avoid layout thrashing
-            return { el, text: txt, index };
+        // Map to {role, el, text}
+        const msgs = nodeList.map((el) => {
+            const role = el.getAttribute('data-message-author-role') || 'user';
+            // try to find inner text
+            const inner = el.querySelector(SELECTORS.userMessageText) || el;
+            const text = (inner && inner.textContent ? inner.textContent.trim().replace(/\s+/g, ' ') : '').slice(0, 5000);
+            return { role, el, text };
         }).filter(m => m.text && m.text.length);
 
-        // Sort by DOM order instead of position
-        messages.sort((a, b) => a.index - b.index);
-        return messages;
+        return msgs;
     }
 
-    // --- Sync Prompts to List (Optimized for Performance) ---
-    function syncPrompts() {
-        if (!cachedList) {
-            cachedList = document.getElementById(LIST_ID);
+    // --- Build prompt->answer pairs ---
+    function buildPairs() {
+        const msgs = readOrderedMessages();
+        if (!msgs.length) return [];
+
+        const pairs = [];
+        for (let i = 0; i < msgs.length; i++) {
+            const m = msgs[i];
+            if (m.role === 'user') {
+                // find next assistant message
+                let answer = null;
+                if (i + 1 < msgs.length && msgs[i + 1].role === 'assistant') {
+                    answer = msgs[i + 1];
+                } else {
+                    // in some flows assistant might appear later; scan forward until next assistant
+                    for (let j = i + 1; j < msgs.length; j++) {
+                        if (msgs[j].role === 'assistant') { answer = msgs[j]; break; }
+                        if (msgs[j].role === 'user') break; // next user indicates no assistant for this prompt
+                    }
+                }
+
+                pairs.push({ prompt: m, answer });
+            }
         }
+
+        return pairs;
+    }
+
+    // --- Create snippet helper ---
+    function snippetOf(text, max = SNIPPET_LENGTH) {
+        if (!text) return '';
+        return text.length > max ? text.slice(0, max) + '…' : text;
+    }
+
+    // --- Sync pairs to modal list ---
+    function syncPrompts() {
+        if (!cachedList) cachedList = document.getElementById(LIST_ID);
         if (!cachedList) return;
 
-        const messages = findUserMessages();
-        
-        // Only update if the count changed
-        if (messages.length === lastMessageCount && messages.length > 0) {
-            return; // No changes needed
-        }
-        
-        lastMessageCount = messages.length;
+        injectInlineStyles();
 
-        // Use DocumentFragment to reduce reflow
+        const pairs = buildPairs();
+
+        if (pairs.length === lastPairCount && pairs.length > 0) return;
+        lastPairCount = pairs.length;
+
         const fragment = document.createDocumentFragment();
 
-        if (!messages.length) {
+        if (!pairs.length) {
             cachedList.innerHTML = '';
             const li = document.createElement('li');
             li.className = 'prompt-item empty';
@@ -142,16 +176,18 @@ console.log("✅ Prompt History Extension starting...");
             fragment.appendChild(li);
         } else {
             cachedList.innerHTML = '';
-            
-            messages.forEach((m, idx) => {
-                if (!m.el.dataset.promptId) m.el.dataset.promptId = `prompt-sync-${++promptIdCounter}`;
-                m.id = m.el.dataset.promptId;
 
-                const li = document.createElement('li');
-                li.className = 'prompt-item';
-                li.tabIndex = 0;
-                li.dataset.targetId = m.id;
-                li.title = m.text;
+            pairs.forEach((p, idx) => {
+                // ensure dataset ids on elements
+                if (!p.prompt.el.dataset.promptId) p.prompt.el.dataset.promptId = `prompt-${++idCounter}`;
+                const promptId = p.prompt.el.dataset.promptId;
+
+                // Prompt list item
+                const liPrompt = document.createElement('li');
+                liPrompt.className = 'prompt-item';
+                liPrompt.tabIndex = 0;
+                liPrompt.dataset.targetId = promptId;
+                liPrompt.title = p.prompt.text;
 
                 const num = document.createElement('span');
                 num.className = 'prompt-number';
@@ -159,22 +195,17 @@ console.log("✅ Prompt History Extension starting...");
 
                 const snip = document.createElement('span');
                 snip.className = 'prompt-snippet';
-                snip.textContent = m.text.length > SNIPPET_LENGTH ? `${m.text.slice(0, SNIPPET_LENGTH)}…` : m.text;
+                snip.textContent = snippetOf(p.prompt.text);
 
-                li.appendChild(num);
-                li.appendChild(snip);
+                liPrompt.appendChild(num);
+                liPrompt.appendChild(snip);
 
-                const activate = () => {
-                    const target = document.querySelector(`[data-prompt-id='${m.id}']`);
+                const activatePrompt = () => {
+                    const target = document.querySelector(`[data-prompt-id='${promptId}']`);
                     if (!target) return;
-
                     document.body.classList.remove('prompt-modal-visible');
-                    
-                    // Use requestAnimationFrame for smoother animations
                     requestAnimationFrame(() => {
                         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        
-                        // Add delay before highlight to ensure scroll completes
                         setTimeout(() => {
                             target.classList.add('prompt-highlight');
                             setTimeout(() => target.classList.remove('prompt-highlight'), HIGHLIGHT_MS);
@@ -182,22 +213,58 @@ console.log("✅ Prompt History Extension starting...");
                     });
                 };
 
-                li.addEventListener('click', activate);
-                li.addEventListener('keydown', (ev) => { 
-                    if (ev.key === 'Enter' || ev.key === ' ') {
-                        ev.preventDefault();
-                        activate();
-                    }
-                });
+                liPrompt.addEventListener('click', activatePrompt);
+                liPrompt.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activatePrompt(); } });
 
-                fragment.appendChild(li);
+                fragment.appendChild(liPrompt);
+
+                // Answer item (if present)
+                if (p.answer) {
+                    if (!p.answer.el.dataset.answerId) p.answer.el.dataset.answerId = `answer-${++idCounter}`;
+                    const answerId = p.answer.el.dataset.answerId;
+
+                    const liAnswer = document.createElement('li');
+                    liAnswer.className = 'answer-item';
+                    liAnswer.tabIndex = 0;
+                    liAnswer.dataset.targetId = answerId;
+                    liAnswer.title = p.answer.text;
+
+                    const label = document.createElement('span');
+                    label.className = 'answer-label';
+                    label.textContent = `Answer ${idx + 1}`;
+
+                    const ansSnip = document.createElement('span');
+                    ansSnip.className = 'answer-snippet';
+                    ansSnip.textContent = snippetOf(p.answer.text, 120);
+
+                    liAnswer.appendChild(label);
+                    liAnswer.appendChild(ansSnip);
+
+                    const activateAnswer = () => {
+                        const target = document.querySelector(`[data-answer-id='${answerId}']`);
+                        if (!target) return;
+                        document.body.classList.remove('prompt-modal-visible');
+                        requestAnimationFrame(() => {
+                            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            setTimeout(() => {
+                                target.classList.add('answer-highlight');
+                                setTimeout(() => target.classList.remove('answer-highlight'), HIGHLIGHT_MS);
+                            }, 300);
+                        });
+                    };
+
+                    liAnswer.addEventListener('click', activateAnswer);
+                    liAnswer.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activateAnswer(); } });
+
+                    fragment.appendChild(liAnswer);
+                }
             });
         }
-        
+
         cachedList.appendChild(fragment);
     }
 
-    // --- Observe Conversation for Changes ---
+    // --- Observe conversation container changes ---
     function startObserver() {
         const containerSelector = SELECTORS?.conversationContainer || 'main';
         const container = document.querySelector(containerSelector);
@@ -210,28 +277,23 @@ console.log("✅ Prompt History Extension starting...");
 
         const mo = new MutationObserver(() => {
             clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => { 
-                try { 
-                    syncPrompts(); 
-                } catch (e) { 
-                    console.error('Sync failed:', e); 
-                }
-            }, 1000); // Increased debounce time for better performance
+            debounceTimer = setTimeout(() => {
+                try { syncPrompts(); } catch (e) { console.error('Sync failed:', e); }
+            }, 800);
         });
 
-        // More specific observer to reduce unnecessary triggers
-        mo.observe(container, { childList: true, subtree: false });
+        mo.observe(container, { childList: true, subtree: true });
     }
 
-    // --- Initialization ---
+    // --- Init ---
     function init() {
         try {
             createModalUI();
             startObserver();
-            setInterval(syncPrompts, 4000); // Periodic refresh as a fallback
-            console.log('✅ Prompt History Modal initialized');
+            setInterval(syncPrompts, 3500);
+            console.log('✅ Prompt History (paired) initialized');
         } catch (e) {
-            console.error('Prompt History Modal init failed', e);
+            console.error('Prompt History init failed', e);
         }
     }
 
@@ -240,4 +302,5 @@ console.log("✅ Prompt History Extension starting...");
     } else {
         document.addEventListener('DOMContentLoaded', init);
     }
+
 })();

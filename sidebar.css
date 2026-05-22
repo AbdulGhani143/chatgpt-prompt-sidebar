@@ -1,206 +1,124 @@
-/* style.css — Styles for the new floating modal prompt history */
-
-/* --- Theme & Layout Variables --- */
-:root {
-    --modal-width: 480px;
-    --modal-max-height: 70vh;
-    --fab-size: 56px;
-    --panel-bg: #1e1e1e;
-    --panel-border: #3a3a3a;
-    --text-primary: #f0f0f0;
-    --text-secondary: #a0a0a0;
-    --accent-color: #4f46e5;
-    --item-hover-bg: #2c2c2c;
-    --panel-radius: 16px;
-    --shadow-color: rgba(0, 0, 0, 0.5);
-    --highlight-bg: rgba(79, 70, 229, 0.15);
-    --z-overlay: 10000;
-    --z-modal: 10001;
-    --z-fab: 9999;
+/* sidebar.updated.css — refined CSS: compact hover previews, bounded tooltips, and improved layout */
+:root{
+  --ph-bg: #0b1220;
+  --ph-panel: #0f1724;
+  --ph-accent: #10b981;
+  --ph-text: #e6eef6;
+  --ph-subtext: #9aa4b2;
+  --ph-overlay: rgba(2,6,23,0.6);
+  --ph-radius: 12px;
+  --ph-gap: 12px;
 }
 
-/* --- Floating Action Button (Toggle) --- */
-#prompt-history-toggle {
-    position: fixed;
-    bottom: 25px;
-    right: 25px;
-    width: var(--fab-size);
-    height: var(--fab-size);
-    background: linear-gradient(45deg, var(--accent-color), #3b82f6);
-    color: white;
-    border-radius: 50%;
-    border: none;
-    cursor: pointer;
-    z-index: var(--z-fab);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    box-shadow: 0 8px 20px var(--shadow-color);
-    transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
-    will-change: transform;
-    transform: translateZ(0);
+@media (prefers-color-scheme: light){
+  :root{
+    --ph-bg: #ffffff;
+    --ph-panel: #fbfdff;
+    --ph-accent: #047857;
+    --ph-text: #0b1220;
+    --ph-subtext: #4b5563;
+    --ph-overlay: rgba(11,18,32,0.25);
+  }
 }
 
-#prompt-history-toggle:hover {
-    transform: scale(1.08);
-    box-shadow: 0 12px 25px var(--shadow-color);
+/* --- Overlay & modal --- */
+#prompt-history-overlay{
+  position: fixed; inset: 0; z-index: 9996; background: var(--ph-overlay); display: none; backdrop-filter: blur(4px);
+}
+.prompt-modal-visible #prompt-history-overlay{ display:block; }
+
+#prompt-history-modal{
+  position: fixed; right: 20px; top: 70px; width: 380px; max-width: calc(100% - 40px); height: calc(100% - 140px);
+  z-index: 9997; background: linear-gradient(180deg, var(--ph-panel), color-mix(in srgb, var(--ph-panel) 85%, transparent));
+  border-radius: var(--ph-radius); box-shadow: 0 12px 40px rgba(2,6,23,0.6); padding: 12px; display: none; overflow: hidden; color: var(--ph-text);
+}
+.prompt-modal-visible #prompt-history-modal{ display:block; }
+
+/* header */
+.prompt-modal-header{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding-bottom:6px; }
+.prompt-modal-title{ font-size:15px; font-weight:700; margin:0; color:var(--ph-text); }
+#prompt-history-close-btn{ background:transparent; border:none; color:var(--ph-subtext); font-size:20px; cursor:pointer; padding:6px; border-radius:8px; }
+#prompt-history-close-btn:focus{ outline: 3px solid color-mix(in srgb, var(--ph-accent) 20%, transparent); }
+
+/* floating toggle */
+#prompt-history-toggle{ position: fixed; right: 22px; bottom: 22px; z-index: 9998; width:48px; height:48px; border-radius:999px; display:flex; align-items:center; justify-content:center; background: linear-gradient(180deg, color-mix(in srgb, var(--ph-accent) 12%, transparent), transparent); border: 1px solid rgba(255,255,255,0.04); box-shadow: 0 6px 18px rgba(2,6,23,0.35); cursor:pointer; backdrop-filter: blur(6px); }
+#prompt-history-toggle:hover{ transform: translateY(-3px); }
+#prompt-history-toggle:focus{ outline: 3px solid color-mix(in srgb, var(--ph-accent) 25%, transparent); }
+
+/* --- List layout --- */
+#prompt-history-list{ list-style:none; margin:10px 0 0 0; padding:8px; overflow:auto; height: calc(100% - 64px); display:flex; flex-direction:column; gap:8px; }
+
+.prompt-item, .answer-item{ position: relative; display:flex; gap:10px; align-items:flex-start; padding:10px; border-radius:10px; cursor:pointer; transition: transform 150ms ease, background 150ms ease; user-select:none; }
+.prompt-item{ background:transparent; border-left:3px solid transparent; }
+.prompt-number{ font-weight:700; min-width:28px; color:var(--ph-subtext); }
+
+/* Ensure snippet area is compact and won't overflow modal */
+.prompt-snippet{ color:var(--ph-text); font-size:13px; line-height:1.25; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; max-width: calc(100% - 40px); }
+
+.answer-item{ background:transparent; padding-left:12px; align-items:center; gap:8px; }
+.answer-label{ font-weight:700; font-size:13px; color:var(--ph-subtext); min-width:74px; }
+.answer-snippet{ color:var(--ph-subtext); font-size:13px; line-height:1.2; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; max-width: calc(100% - 90px); }
+
+/* hover & focus */
+.prompt-item:hover, .answer-item:hover{ background: rgba(255,255,255,0.02); transform: translateY(-2px); }
+.prompt-item:focus, .answer-item:focus{ outline:none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--ph-accent) 16%, transparent); }
+
+/* --- Bounded hover preview (tooltip-like, but internal) ---
+   Uses data-full attribute set by the script. It is limited in width and lines,
+   auto-switches to below-item placement on small screens. Pointer-events none so
+   it doesn't block clicks. */
+
+/* hide default title tooltips by ensuring we do not set title in JS. */
+
+#prompt-history-list .preview-tooltip{ display:none; }
+
+#prompt-history-list .prompt-item[data-full]:hover::after,
+#prompt-history-list .answer-item[data-full]:hover::after{
+  content: attr(data-full);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: -12px;
+  z-index: 9999;
+  pointer-events: none;
+  width: min(360px, calc(100vw - 64px));
+  max-width: 360px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ph-panel) 94%, transparent), var(--ph-panel));
+  color: var(--ph-text);
+  font-size:13px;
+  line-height:1.3;
+  box-shadow: 0 12px 36px rgba(2,6,23,0.55);
+  display: -webkit-box;
+  -webkit-line-clamp:6;
+  -webkit-box-orient:vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* --- Modal & Overlay --- */
-#prompt-history-overlay,
-#prompt-history-modal {
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.3s ease, visibility 0.3s ease;
+/* When there is not enough space above, show below the item on small widths */
+@media (max-width: 480px){
+  #prompt-history-list .prompt-item[data-full]:hover::after,
+  #prompt-history-list .answer-item[data-full]:hover::after{
+    top: calc(100% + 8px);
+    left: 12px;
+    transform: none;
+    width: calc(100% - 24px);
+    max-width: calc(100% - 24px);
+  }
 }
 
-#prompt-history-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background-color: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    z-index: var(--z-overlay);
-    will-change: opacity;
+/* -- Highlighting classes used by the script when jumping to messages -- */
+.prompt-highlight{ transition: background-color 220ms ease, box-shadow 220ms ease; background: color-mix(in srgb, var(--ph-accent) 8%, transparent); box-shadow: 0 6px 24px rgba(16,185,129,0.06); }
+.answer-highlight{ transition: background-color 220ms ease, box-shadow 220ms ease; background: color-mix(in srgb, var(--ph-accent) 6%, transparent); box-shadow: 0 6px 24px rgba(16,185,129,0.05); }
+
+/* responsive modal adjustments */
+@media (max-width: 600px){
+  #prompt-history-modal{ right:12px; left:12px; top: 40px; width:auto; height: calc(100% - 80px); }
+  #prompt-history-toggle{ right:12px; bottom:12px; }
 }
 
-#prompt-history-modal {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    width: var(--modal-width);
-    max-width: 90vw;
-    max-height: var(--modal-max-height);
-    background-color: var(--panel-bg);
-    border: 1px solid var(--panel-border);
-    border-radius: var(--panel-radius);
-    box-shadow: 0 15px 40px var(--shadow-color);
-    z-index: var(--z-modal);
-    display: flex;
-    flex-direction: column;
-    color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    transform: translate(-50%, -50%) scale(0.95);
-    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-    will-change: transform, opacity;
-    transform-style: preserve-3d;
-    backface-visibility: hidden;
-}
+@media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
 
-/* --- Visible State --- */
-body.prompt-modal-visible #prompt-history-overlay,
-body.prompt-modal-visible #prompt-history-modal {
-    opacity: 1;
-    visibility: visible;
-}
-
-body.prompt-modal-visible #prompt-history-modal {
-    transform: translate(-50%, -50%) scale(1);
-}
-
-/* --- Modal Header --- */
-.prompt-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--panel-border);
-    flex-shrink: 0;
-}
-
-.prompt-modal-title {
-    font-size: 18px;
-    font-weight: 600;
-    margin: 0;
-}
-
-#prompt-history-close-btn {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 28px;
-    font-weight: 300;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 4px;
-    transition: color 0.15s ease, transform 0.15s ease;
-    will-change: transform;
-}
-
-#prompt-history-close-btn:hover {
-    color: var(--text-primary);
-    transform: scale(1.1);
-}
-
-/* --- Prompt List --- */
-#prompt-history-list {
-    list-style: none;
-    padding: 16px;
-    margin: 0;
-    overflow-y: auto;
-    flex-grow: 1;
-}
-
-.prompt-item {
-    display: flex;
-    gap: 12px;
-    padding: 12px 16px;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: background-color 0.2s ease, transform 0.2s ease;
-    line-height: 1.4;
-    will-change: transform, background-color;
-    transform: translateZ(0);
-}
-
-.prompt-item:hover {
-    background-color: var(--item-hover-bg);
-    transform: translateY(-1px);
-}
-
-.prompt-item.empty {
-    color: var(--text-secondary);
-    text-align: center;
-    display: block;
-    padding: 40px 20px;
-    cursor: default;
-}
-
-.prompt-number {
-    color: var(--text-secondary);
-    font-weight: 600;
-    font-size: 14px;
-    flex-shrink: 0;
-}
-
-.prompt-snippet {
-    font-size: 15px;
-    word-break: break-word;
-}
-
-/* --- Page Highlight Effect --- */
-.prompt-highlight {
-    background-color: var(--highlight-bg) !important;
-    border-radius: 8px;
-    transition: background-color 0.3s ease-in-out;
-    box-shadow: 0 0 0 2px var(--accent-color);
-}
-
-/* --- Accessibility & Responsive --- */
-@media (max-width: 1024px) {
-    #prompt-history-toggle,
-    #prompt-history-modal,
-    #prompt-history-overlay {
-        display: none !important;
-    }
-}
-
-#prompt-history-toggle:focus-visible,
-#prompt-history-close-btn:focus-visible,
-.prompt-item:focus-visible {
-    outline: 2px solid var(--accent-color);
-    outline-offset: 2px;
-}
+.empty{ color: var(--ph-subtext); padding:16px; text-align:center; }
